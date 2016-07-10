@@ -31,9 +31,10 @@ quick_error!{
 pub type Result = std::result::Result<(), Vec<Error>>;
 
 pub trait Visitor {
-
+    fn package_preprocessing_failed(&mut self, package: &PackageInfo, err: &Error);
 }
 
+#[derive(Debug, Clone)]
 pub struct PackageInfo {
     /// the directory containing the package.json
     pub directory: PathBuf,
@@ -60,12 +61,13 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
         match read_package_json(p) {
             Ok(pj) => {}
             Err(err) => {
+                visitor.package_preprocessing_failed(p, &err);
                 errors.push(err);
             }
         }
     }
 
-    if (errors.is_empty()) {
+    if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
