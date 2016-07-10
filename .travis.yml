@@ -1,0 +1,19 @@
+language: rust
+os:
+  - linux
+  - osx
+rust:
+  - stable
+  - nightly
+before_script:
+  - pip install 'travis-cargo<0.2' --user  && export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
+script:
+  - travis-cargo build
+  - travis-cargo test
+  - travis-cargo doc
+after_success:
+  - "[[ $TRAVIS_OS_NAME = linux ]] && travis-cargo --only stable doc-upload"
+  - "[[ $TRAVIS_OS_NAME = linux ]] && travis-cargo --only stable coveralls"
+env:
+  global:
+    - TRAVIS_CARGO_NIGHTLY_FEATURE=""
