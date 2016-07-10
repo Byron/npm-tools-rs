@@ -7,3 +7,5 @@ authors = ["Sebastian Thiel <byronimo@gmail.com>"]
 
 [dev-dependencies]
 hamcrest = "*"
+tempdir = "^0.3"
+fs-utils = "*"
