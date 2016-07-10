@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::path::PathBuf;
-use serde_json::{Value, from_reader, self};
+use serde_json::{self, Value, from_reader};
 use quick_error::ResultExt;
 
 use std;
@@ -28,28 +28,46 @@ quick_error!{
     }
 }
 
-pub type Result = std::result::Result<(), Error>;
+pub type Result = std::result::Result<(), Vec<Error>>;
 
 pub trait Visitor {
 
 }
 
-pub struct PackageInfo<'a> {
+pub struct PackageInfo {
     /// the directory containing the package.json
-    pub directory: &'a Path,
+    pub directory: PathBuf,
     /// the root directory at which all other node_modules are found
-    pub root_directory: &'a Path,
+    pub root_directory: PathBuf
 }
 
 pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Result
     where P: AsRef<Path>,
-          I: IntoIterator<Item = &'a PackageInfo<'a>>,
+          I: IntoIterator<Item = &'a PackageInfo>,
           V: Visitor
 {
-    for p in items {
+    fn read_package_json(p: &PackageInfo) -> std::result::Result<Value, Error> {
         let pjp = p.directory.join("package.json");
-        let pj: Value = try!(from_reader(try!(fs::File::open(&pjp).context(ReadPackageFile(&pjp))))
-                            .context(DecodePackageFile((&pjp))));
+        let pj: Value = {
+            let rd = try!(fs::File::open(&pjp).context(ReadPackageFile(&pjp)));
+            try!(from_reader(rd).context(DecodePackageFile((&pjp))))
+        };
+        Ok(pj)
     }
-    Ok(())
+
+    let mut errors = Vec::new();
+    for p in items {
+        match read_package_json(p) {
+            Ok(pj) => {}
+            Err(err) => {
+                errors.push(err);
+            }
+        }
+    }
+
+    if (errors.is_empty()) {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
