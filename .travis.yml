@@ -16,4 +16,5 @@ after_success:
   - "[[ $TRAVIS_OS_NAME = linux ]] && travis-cargo --only stable coveralls"
 env:
   global:
-    - TRAVIS_CARGO_NIGHTLY_FEATURE=""
+    - TRIS_CARGO_NIGHTLY_FEATURE=""
+    - secure: tc59hf2XoCxH+UL9gIMgZ1CDc5R/3aS+OcR+oGaQg6Z6jhwZYBvVtLQ0kOprp+Fwqgy7Xk8VuSd9sYmbI5d6P3mVkjdHTGyVaKLwkJmJR8Zx+pjg4xE8GNx4IvAUDEpDFUYrZCW5bWziUsTpnncw4KGjJS7GlvHedboPQ2LLA4sT/twlqON+mlZNYFKh3KGRhp28B/Dwz8cdCCai3VMj0P8BbMYwmhKoFBDLX89XlNRwL27a883Ka2yDJh6hhVbd4/TWklE/KwVtAen3OsMyl5dWnqGeG/kVXteOwuqF13o3URgVr37LIHJdEw7bfvweDgG3zkoLa4oO9vo9isSxqD0xpPitE3p+vC8CsoO/01OQ2ztTGMfP4XjlUF+CxEetQsKNk1FD8enF+mhNgKFBGJMA/H/6cc+IsXOP9t3gS3Esf11+sM/KyQJPBFUokUC9h8VBVTxYHvqs1cZUOct++LlGT9O5myVp3AkGAMYeIpayEZxQq+YuOAAGJX64hzKWsjrBkyfqqurVVN7xjsZDwt7aRh3nhiVhxO66uV8u/n+fvQCjA4cOasEUsVl4ZkaOpkU5Mves78bzy8si9f9gLmRa7Ej8K0zr5/8zOiauQjWwqc+YDrG8s1H8eazdxHYOuLZ5f45IJtxIE6eQR38vYwE0b4Lz3D+XtpAxYTHValE=
