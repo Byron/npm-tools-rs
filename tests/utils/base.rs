@@ -4,7 +4,7 @@ use tempdir::TempDir;
 
 pub fn fixture_at<P>(path: P) -> PathBuf
     where P: AsRef<Path>{
-    Path::new(file!()).parent().unwrap().join("fixtures").join(path)
+    Path::new(file!()).parent().unwrap().parent().unwrap().join("fixtures").join(path)
 }
 
 pub fn transient_repo_path() -> TempDir {

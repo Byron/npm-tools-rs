@@ -3,7 +3,7 @@ extern crate tempdir;
 extern crate npm_tools;
 extern crate fs_utils;
 
-mod util;
+mod utils;
 
 use npm_tools::{ deduplicate_into, Visitor, PackageInfo };
 use hamcrest::*;
@@ -20,10 +20,10 @@ impl Visitor for Collector {
     }
 }
 
-fn setup(root: &str) -> (TempDir, Collector, util::PackageMaker) {
-    (util::transient_repo_path(),
+fn setup(root: &str) -> (TempDir, Collector, utils::PackageMaker) {
+    (utils::transient_repo_path(),
      Collector::default(),
-     util::PackageMaker::new(root))
+     utils::PackageMaker::new(root))
 }
 
 #[test]
