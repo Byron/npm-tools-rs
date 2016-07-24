@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use serde_json::{self, Value, from_reader, Map};
 use quick_error::ResultExt;
 use std::ffi::OsStr;
+use std::collections::btree_map::BTreeMap;
+use std::collections::hash_set::HashSet;
+use semver::{VersionReq, Version, SemVerError, ReqParseError};
 
 use std;
 use std::fs;
@@ -10,6 +13,7 @@ use std::io;
 
 struct ReadPackageFile<'a>(&'a Path);
 struct DecodePackageFile<'a>(&'a Path);
+struct PathAndVersion<'a>(&'a Path, &'a str);
 
 quick_error!{
     #[derive(Debug)]
@@ -18,6 +22,18 @@ quick_error!{
             description("The package.json could not be opened for reading")
             display("Failed to open '{}'", p.display())
             context(p: ReadPackageFile<'a>, err: io::Error) -> (p.0.to_path_buf(), err)
+            cause(err)
+        }
+        InvalidVersionRequirement(package_json_dir: PathBuf, version_req: String, err: ReqParseError) {
+            description("A semantic version requirement could not be parsed")
+            display("Unexpected version requirement string '{}' in {}/package.json: {}", version_req, package_json_dir.display(), err)
+            context(a: PathAndVersion<'a>, err: ReqParseError) -> (a.0.to_path_buf(), a.1.to_owned(), err)
+            cause(err)
+        }
+        InvalidVersion(package_json_dir: PathBuf, version: String, err: SemVerError) {
+            description("A semantic version could not be parsed")
+            display("Unexpected version string '{}' in {}/package.json: {}", version, package_json_dir.display(), err)
+            context(a: PathAndVersion<'a>, err: SemVerError) -> (a.0.to_path_buf(), a.1.to_owned(), err)
             cause(err)
         }
         JsonStructure(package_json_dir: PathBuf, expectation: String) {
@@ -54,6 +70,23 @@ pub trait Visitor {
     fn change(&mut self, action: Instruction);
 }
 
+#[derive(Ord, Eq, PartialEq, PartialOrd)]
+struct PackageKey {
+    name: String,
+    version: Version,
+}
+
+#[derive(Hash, Eq, PartialEq)]
+struct PackageDependency {
+    name: String,
+    version_req: String,
+}
+
+struct PackageDependencies {
+    package_info: PackageInfo,
+    deps: HashSet<PackageDependency>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageInfo {
     /// the directory containing the package.json
@@ -68,6 +101,9 @@ impl PackageInfo {
     }
 }
 
+/// Iterate `items` and read all package.json files contained therein to collect enough information
+/// to compute all changes required to sym-link or update the respective packages in `repo`.
+/// `visitor` will be called whenever something goes wrong, or whenever there is something to do.
 pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Result<(), Vec<Error>>
     where P: AsRef<Path>,
           I: IntoIterator<Item = &'a PackageInfo>,
@@ -85,40 +121,60 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
         }
     }
 
-    fn handle_package(repo: &Path, p: &PackageInfo, errors: &mut Vec<Error>, visitor: &mut Visitor) {
+    fn fetch_string(m: &Map<String, Value>, p: &PackageInfo, field_name: &str) -> Result<String, Error> {
+        m.get(field_name)
+            .and_then(|v| match v {
+                &Value::String(ref v) => Some(v.to_owned()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                Error::JsonStructure(p.directory.clone(),
+                                     format!("'{}' key was not present, or its value was not a string",
+                                             field_name))
+            })
+    }
+
+    fn handle_package(repo: &Path, p: &PackageInfo, errors: &mut Vec<Error>, deps: &mut BTreeMap<PackageKey, PackageDependencies>, visitor: &mut Visitor) {
         match read_package_json(p).and_then(|pj| {
-            pj.get("version")
-                .and_then(|v| match v.to_owned() {
-                    Value::String(v) => Some(v),
-                    _ => None,
-                })
-                .map(|v| (pj, v))
-                .ok_or_else(|| {
-                    Error::JsonStructure(p.directory.clone(),
-                                         String::from("'version' key was not present, or its value was not a string"))
-                })
+            fetch_string(&pj, p, "version")
+                .and_then(|v| fetch_string(&pj, p, "name").map(|n| (v, n)))
+                .and_then(|(v, n)| Version::parse(&v).context(PathAndVersion(&p.directory, &v)).map_err(|e| e.into()).map(|sv| (pj, sv, v, n)))
         }) {
-            Ok((pj, version)) => {
+            Ok((pj, semantic_version, version, name)) => {
+                let mut dep_info = deps.entry(PackageKey {
+                        name: name,
+                        version: semantic_version,
+                    })
+                    .or_insert_with(|| {
+                        PackageDependencies {
+                            package_info: p.clone(),
+                            deps: Default::default(),
+                        }
+                    });
                 for dep_key in &["dependencies", "devDependencies"] {
                     if let Some(deps) = pj.get(*dep_key) {
                         match deps.as_object().ok_or_else(|| {
-                            Error::JsonStructure(p.directory.clone(),
+                            Error::JsonStructure(p.directory.to_owned(),
                                                  format!("Key {} was not an object", dep_key))
                         }) {
                             Ok(deps) => {
                                 for (dep_name, dep_version) in deps.iter() {
-                                    let sub_modules_path = p.directory.join("node_modules").join(dep_name);
-                                    let root_submodule_path = p.root_directory.join(dep_name);
-                                    for potential_root in &[sub_modules_path, root_submodule_path] {
-                                        if potential_root.is_dir() {
-                                            let sub_package = PackageInfo {
-                                                directory: potential_root.clone(),
-                                                root_directory: p.root_directory.clone(),
-                                            };
-                                            handle_package(repo, &sub_package, errors, visitor);
-                                            break;
+                                    let normalized_req = match dep_version.as_string()
+                                        .ok_or_else(|| {
+                                            Error::JsonStructure(p.directory.clone(),
+                                                                 String::from("version of dependency was not a string"))
+                                        })
+                                        .and_then(|v| VersionReq::parse(v).context(PathAndVersion(&p.directory, v)).map_err(|err| err.into())) {
+                                        Ok(vr) => vr,
+                                        Err(err) => {
+                                            errors.push(err);
+                                            continue;
                                         }
-                                    }
+                                    };
+                                    dep_info.deps.insert(PackageDependency {
+                                        name: dep_name.to_owned(),
+                                        version_req: format!("{}", normalized_req),
+                                    });
                                 }
                             }
                             Err(err) => errors.push(err),
@@ -140,8 +196,9 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
     }
 
     let mut errors = Vec::new();
+    let mut deps = BTreeMap::new();
     for p in items {
-        handle_package(repo.as_ref(), p, &mut errors, visitor);
+        handle_package(repo.as_ref(), p, &mut errors, &mut deps, visitor);
     }
 
     if errors.is_empty() {
