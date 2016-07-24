@@ -34,9 +34,20 @@ fn setup(root: &str) -> (TempDir, Collector, utils::PackageMaker) {
 fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_does_not_exist() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
 
-    let r = deduplicate_into(repo.path(), &[make.package_at("sigmund")], &mut cl);
+    let ps = [make.package_at("sigmund")];
+    let r = deduplicate_into(repo.path(), &ps, &mut cl);
     assert_that(r.unwrap(), equal_to(()));
     assert_that(&cl.instructions, of_len(1));
+
+    let ref op = cl.instructions[0];
+    match op {
+        &Instruction::MoveAndSymlink {ref from_here, ref to_here, ref symlink_destination} => {
+            assert_that(from_here, equal_to(&ps[0].directory));
+            let expected_to_here = repo.path().join("sigmund").join("1.0.1");
+            assert_that(to_here, equal_to(&expected_to_here));
+            assert_that(symlink_destination, equal_to(&expected_to_here));
+        }
+    }
 }
 
 #[test]

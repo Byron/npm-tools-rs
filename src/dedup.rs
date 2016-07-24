@@ -33,6 +33,8 @@ quick_error!{
     }
 }
 
+/// Something to be done.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instruction {
     /// Move the directory at `from_here` to the `to_here` location, and create a symbolic link
     /// located at `from_here` which points to `to_here`, via the pre-computed `symlink_destination`
@@ -47,10 +49,12 @@ pub trait Visitor {
     /// Called whenever the package identified by `package` cannot be processed. The exact
     /// problem is stated in `err`.
     fn package_preprocessing_failed(&mut self, package: &PackageInfo, err: &Error);
+    /// Called with an instruction on what to do next. Must never panic, and is expected to keep
+    /// all error handling internal.
     fn change(&mut self, action: Instruction);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageInfo {
     /// the directory containing the package.json
     pub directory: PathBuf,
@@ -121,10 +125,11 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                         }
                     }
                 }
+                let destination = repo.join(p.name()).join(version);
                 visitor.change(Instruction::MoveAndSymlink {
                     from_here: p.directory.clone(),
-                    to_here: repo.join(p.name()),
-                    symlink_destination: PathBuf::from("tobedone"),
+                    to_here: destination.clone(),
+                    symlink_destination: destination,
                 });
             }
             Err(err) => {
