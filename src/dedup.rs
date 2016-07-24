@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value, from_reader, Map};
 use quick_error::ResultExt;
 use std::ffi::OsStr;
-use std::collections::btree_map::BTreeMap;
+use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 use semver::{VersionReq, Version, SemVerError, ReqParseError};
 
@@ -70,7 +70,7 @@ pub trait Visitor {
     fn change(&mut self, action: Instruction);
 }
 
-#[derive(Ord, Eq, PartialEq, PartialOrd)]
+#[derive(Hash, Eq, PartialEq)]
 struct PackageKey {
     name: String,
     version: Version,
@@ -134,13 +134,13 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
             })
     }
 
-    fn handle_package(repo: &Path, p: &PackageInfo, errors: &mut Vec<Error>, deps: &mut BTreeMap<PackageKey, PackageDependencies>, visitor: &mut Visitor) {
+    fn handle_package(p: &PackageInfo, errors: &mut Vec<Error>, deps: &mut HashMap<PackageKey, PackageDependencies>, visitor: &mut Visitor) {
         match read_package_json(p).and_then(|pj| {
             fetch_string(&pj, p, "version")
                 .and_then(|v| fetch_string(&pj, p, "name").map(|n| (v, n)))
-                .and_then(|(v, n)| Version::parse(&v).context(PathAndVersion(&p.directory, &v)).map_err(|e| e.into()).map(|sv| (pj, sv, v, n)))
+                .and_then(|(v, n)| Version::parse(&v).context(PathAndVersion(&p.directory, &v)).map_err(|e| e.into()).map(|sv| (pj, sv, n)))
         }) {
-            Ok((pj, semantic_version, version, name)) => {
+            Ok((pj, semantic_version, name)) => {
                 let mut dep_info = deps.entry(PackageKey {
                         name: name,
                         version: semantic_version,
@@ -181,12 +181,6 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                         }
                     }
                 }
-                let destination = repo.join(p.name()).join(version);
-                visitor.change(Instruction::MoveAndSymlink {
-                    from_here: p.directory.clone(),
-                    to_here: destination.clone(),
-                    symlink_destination: destination,
-                });
             }
             Err(err) => {
                 visitor.package_preprocessing_failed(p, &err);
@@ -196,9 +190,19 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
     }
 
     let mut errors = Vec::new();
-    let mut deps = BTreeMap::new();
+    let mut deps = HashMap::new();
     for p in items {
-        handle_package(repo.as_ref(), p, &mut errors, &mut deps, visitor);
+        handle_package(p, &mut errors, &mut deps, visitor);
+    }
+
+    for (pi, pd) in deps.iter_mut() {
+        let destination = repo.as_ref().join(&pi.name).join(format!("{}", &pi.version));
+        let ref p = pd.package_info;
+        visitor.change(Instruction::MoveAndSymlink {
+            from_here: p.directory.clone(),
+            to_here: destination.clone(),
+            symlink_destination: destination,
+        });
     }
 
     if errors.is_empty() {
