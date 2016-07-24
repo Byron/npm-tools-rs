@@ -17,7 +17,7 @@ struct Collector {
 }
 
 impl Visitor for Collector {
-    fn package_preprocessing_failed(&mut self, package: &PackageInfo, _: &npm_tools::Error) {
+    fn error(&mut self, package: &PackageInfo, _: &npm_tools::Error) {
         self.preprocessed_packages.push(package.clone());
     }
 

@@ -66,9 +66,9 @@ pub enum Instruction {
 }
 
 pub trait Visitor {
-    /// Called whenever the package identified by `package` cannot be processed. The exact
+    /// Called whenever the package identified by `package` could be processed. The exact
     /// problem is stated in `err`.
-    fn package_preprocessing_failed(&mut self, package: &PackageInfo, err: &Error);
+    fn error(&mut self, package: &PackageInfo, err: &Error);
     /// Called with an instruction on what to do next. Must never panic, and is expected to keep
     /// all error handling internal.
     fn change(&mut self, action: Instruction);
@@ -138,6 +138,11 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
             })
     }
 
+    fn handle_error(p: &PackageInfo, errs: &mut Vec<Error>, err: Error, v: &mut Visitor) {
+        v.error(p, &err);
+        errs.push(err);
+    }
+
     fn handle_package(p: &PackageInfo, errors: &mut Vec<Error>, deps: &mut HashMap<PackageKey, PackageDependencies>, visitor: &mut Visitor) {
         match read_package_json(p).and_then(|pj| {
             fetch_string(&pj, p, "version")
@@ -157,7 +162,7 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                     }
                     Entry::Occupied(e) => {
                         if e.get().package_info == *p {
-                            errors.push(p.clone().into());
+                            handle_error(p, errors, p.clone().into(), visitor)
                         }
                         return;
                     }
@@ -178,7 +183,7 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                                         .and_then(|v| VersionReq::parse(v).context(PathAndVersion(&p.directory, v)).map_err(|err| err.into())) {
                                         Ok(vr) => vr,
                                         Err(err) => {
-                                            errors.push(err);
+                                            handle_error(p, errors, err, visitor);
                                             continue;
                                         }
                                     };
@@ -188,14 +193,13 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                                     });
                                 }
                             }
-                            Err(err) => errors.push(err),
+                            Err(err) => handle_error(p, errors, err, visitor),
                         }
                     }
                 }
             }
             Err(err) => {
-                visitor.package_preprocessing_failed(p, &err);
-                errors.push(err);
+                handle_error(p, errors, err, visitor);
             }
         }
     }
