@@ -6,7 +6,7 @@ extern crate fs_utils;
 mod utils;
 
 use std::path::PathBuf;
-use npm_tools::{deduplicate_into, Visitor, PackageInfo, Instruction};
+use npm_tools::{deduplicate_into, Visitor, PackageInfo, Instruction, Error};
 use hamcrest::*;
 use tempdir::TempDir;
 
@@ -74,4 +74,18 @@ fn it_informs_the_visitor_right_after_something_went_wrong() {
     assert_that(&ve, of_len(1));
     assert_eq!(cl.preprocessed_packages[0].directory.file_name().unwrap(),
                "is-not-there");
+}
+
+#[test]
+fn it_rejects_duplicate_packages() {
+    let (repo, mut cl, make) = setup("reveal.js-unnested");
+
+    let p = make.package_at("sigmund");
+    let ps = [p.clone(), p];
+    let ve = deduplicate_into(repo.path(), &ps, &mut cl).err().unwrap();
+    assert_that(&ve, of_len(1));
+    match ve[0] {
+        Error::DuplicatePackageInformation(ref pd) => assert_that(&ps[1], equal_to(pd)),
+        _ => assert!(false)
+    }
 }

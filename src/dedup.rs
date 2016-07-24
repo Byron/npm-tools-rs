@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value, from_reader, Map};
 use quick_error::ResultExt;
 use std::ffi::OsStr;
-use std::collections::hash_map::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::hash_set::HashSet;
 use semver::{VersionReq, Version, SemVerError, ReqParseError};
 
@@ -39,6 +39,10 @@ quick_error!{
         JsonStructure(package_json_dir: PathBuf, expectation: String) {
             description("The data structure within package.json was unexpected")
             display("Unexpected Json Strucut in {}/package.json: {}", package_json_dir.display(), expectation)
+        }
+        DuplicatePackageInformation(p: PackageInfo) {
+            description("The given package information was traversed already")
+            from()
         }
         DecodeJson(p: PathBuf, err: serde_json::Error) {
             description("The package.json could not be parsed as JSON")
@@ -141,16 +145,23 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                 .and_then(|(v, n)| Version::parse(&v).context(PathAndVersion(&p.directory, &v)).map_err(|e| e.into()).map(|sv| (pj, sv, n)))
         }) {
             Ok((pj, semantic_version, name)) => {
-                let mut dep_info = deps.entry(PackageKey {
-                        name: name,
-                        version: semantic_version,
-                    })
-                    .or_insert_with(|| {
-                        PackageDependencies {
+                let mut dep_info = match deps.entry(PackageKey {
+                    name: name,
+                    version: semantic_version,
+                }) {
+                    Entry::Vacant(e) => {
+                        e.insert(PackageDependencies {
                             package_info: p.clone(),
                             deps: Default::default(),
+                        })
+                    }
+                    Entry::Occupied(e) => {
+                        if e.get().package_info == *p {
+                            errors.push(p.clone().into());
                         }
-                    });
+                        return;
+                    }
+                };
                 for dep_key in &["dependencies", "devDependencies"] {
                     if let Some(deps) = pj.get(*dep_key) {
                         match deps.as_object().ok_or_else(|| {
