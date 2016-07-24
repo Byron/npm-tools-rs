@@ -5,25 +5,29 @@ extern crate fs_utils;
 
 mod utils;
 
-use npm_tools::{ deduplicate_into, Visitor, PackageInfo };
+use std::path::PathBuf;
+use npm_tools::{deduplicate_into, Visitor, PackageInfo, Instruction};
 use hamcrest::*;
 use tempdir::TempDir;
 
 #[derive(Default)]
 struct Collector {
-    preprocessed_packages: Vec<PackageInfo>
+    preprocessed_packages: Vec<PackageInfo>,
+    instructions: Vec<Instruction>,
 }
 
 impl Visitor for Collector {
     fn package_preprocessing_failed(&mut self, package: &PackageInfo, _: &npm_tools::Error) {
         self.preprocessed_packages.push(package.clone());
     }
+
+    fn change(&mut self, action: Instruction) {
+        self.instructions.push(action);
+    }
 }
 
 fn setup(root: &str) -> (TempDir, Collector, utils::PackageMaker) {
-    (utils::transient_repo_path(),
-     Collector::default(),
-     utils::PackageMaker::new(root))
+    (utils::transient_repo_path(), Collector::default(), utils::PackageMaker::new(root))
 }
 
 #[test]
@@ -32,6 +36,17 @@ fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_doe
 
     let r = deduplicate_into(repo.path(), &[make.package_at("sigmund")], &mut cl);
     assert_that(r.unwrap(), equal_to(()));
+    assert_that(&cl.instructions, of_len(1));
+}
+
+#[test]
+fn a_package_can_produce_its_name() {
+   let p = PackageInfo {
+       directory: PathBuf::from("some/path/package-name"),
+       root_directory: PathBuf::new()
+   };
+
+    assert_that(p.name(), equal_to("package-name".as_ref()));
 }
 
 #[test]
@@ -46,5 +61,6 @@ fn it_informs_the_visitor_right_after_something_went_wrong() {
 
     let ve = deduplicate_into(repo.path(), &[make.package_at("is-not-there")], &mut cl).err().unwrap();
     assert_that(&ve, of_len(1));
-    assert_eq!(cl.preprocessed_packages[0].directory.file_name().unwrap(), "is-not-there");
+    assert_eq!(cl.preprocessed_packages[0].directory.file_name().unwrap(),
+               "is-not-there");
 }
