@@ -41,7 +41,7 @@ fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_doe
 
     let ref op = cl.instructions[0];
     match op {
-        &Instruction::MoveAndSymlink {ref from_here, ref to_here, ref symlink_destination} => {
+        &Instruction::MoveAndSymlink { ref from_here, ref to_here, ref symlink_destination } => {
             assert_that(from_here, equal_to(&ps[0].directory));
             let expected_to_here = repo.path().join("sigmund").join("1.0.1");
             assert_that(to_here, equal_to(&expected_to_here));
@@ -52,10 +52,10 @@ fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_doe
 
 #[test]
 fn a_package_can_produce_its_name() {
-   let p = PackageInfo {
-       directory: PathBuf::from("some/path/package-name"),
-       root_directory: PathBuf::new()
-   };
+    let p = PackageInfo {
+        directory: PathBuf::from("some/path/package-name"),
+        root_directory: PathBuf::new(),
+    };
 
     assert_that(p.name(), equal_to("package-name".as_ref()));
 }
@@ -86,6 +86,6 @@ fn it_rejects_duplicate_packages() {
     assert_that(&ve, of_len(1));
     match ve[0] {
         Error::DuplicatePackageInformation(ref pd) => assert_that(&ps[1], equal_to(pd)),
-        _ => assert!(false)
+        _ => assert!(false),
     }
 }

@@ -143,11 +143,19 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
         errs.push(err);
     }
 
-    fn handle_package(p: &PackageInfo, errors: &mut Vec<Error>, deps: &mut HashMap<PackageKey, PackageDependencies>, visitor: &mut Visitor) {
+    fn handle_package(p: &PackageInfo,
+                      errors: &mut Vec<Error>,
+                      deps: &mut HashMap<PackageKey, PackageDependencies>,
+                      visitor: &mut Visitor) {
         match read_package_json(p).and_then(|pj| {
             fetch_string(&pj, p, "version")
                 .and_then(|v| fetch_string(&pj, p, "name").map(|n| (v, n)))
-                .and_then(|(v, n)| Version::parse(&v).context(PathAndVersion(&p.directory, &v)).map_err(|e| e.into()).map(|sv| (pj, sv, n)))
+                .and_then(|(v, n)| {
+                    Version::parse(&v)
+                        .context(PathAndVersion(&p.directory, &v))
+                        .map_err(|e| e.into())
+                        .map(|sv| (pj, sv, n))
+                })
         }) {
             Ok((pj, semantic_version, name)) => {
                 let mut dep_info = match deps.entry(PackageKey {
@@ -180,7 +188,11 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                                             Error::JsonStructure(p.directory.clone(),
                                                                  String::from("version of dependency was not a string"))
                                         })
-                                        .and_then(|v| VersionReq::parse(v).context(PathAndVersion(&p.directory, v)).map_err(|err| err.into())) {
+                                        .and_then(|v| {
+                                            VersionReq::parse(v)
+                                                .context(PathAndVersion(&p.directory, v))
+                                                .map_err(|err| err.into())
+                                        }) {
                                         Ok(vr) => vr,
                                         Err(err) => {
                                             handle_error(p, errors, err, visitor);
