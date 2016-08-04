@@ -183,7 +183,7 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
                         }) {
                             Ok(deps) => {
                                 for (dep_name, dep_version) in deps.iter() {
-                                    let normalized_req = match dep_version.as_string()
+                                    let normalized_req = match dep_version.as_str()
                                         .ok_or_else(|| {
                                             Error::JsonStructure(p.directory.clone(),
                                                                  String::from("version of dependency was not a string"))

@@ -79,7 +79,7 @@ fn it_informs_the_visitor_right_after_something_went_wrong() {
 #[test]
 fn it_rejects_duplicate_packages() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
-
+    
     let p = make.package_at("sigmund");
     let ps = [p.clone(), p];
     let ve = deduplicate_into(repo.path(), &ps, &mut cl).err().unwrap();
