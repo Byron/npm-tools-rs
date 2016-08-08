@@ -2,6 +2,7 @@ extern crate hamcrest;
 extern crate tempdir;
 extern crate npm_tools;
 extern crate fs_utils;
+#[macro_use] extern crate quick_error;
 
 mod utils;
 
@@ -14,15 +15,31 @@ use tempdir::TempDir;
 struct Collector {
     preprocessed_packages: Vec<PackageInfo>,
     instructions: Vec<Instruction>,
+    fail_on_change: bool,
 }
 
+quick_error!{
+    #[derive(Debug)]
+    pub enum FakeError {
+        Action(action: Instruction) { }
+    }
+}
+
+
 impl Visitor for Collector {
+    type Error = FakeError;
+
     fn error(&mut self, package: &PackageInfo, _: &npm_tools::Error) {
         self.preprocessed_packages.push(package.clone());
     }
 
-    fn change(&mut self, action: Instruction) {
-        self.instructions.push(action);
+    fn change(&mut self, action: Instruction) -> Result<(), Self::Error> {
+        if self.fail_on_change {
+            Err(FakeError::Action(action))
+        } else {
+            self.instructions.push(action);
+            Ok(())
+        }
     }
 }
 
@@ -61,9 +78,12 @@ fn a_package_can_produce_its_name() {
 }
 
 #[test]
-#[ignore]
 fn it_indicates_error_if_the_visitor_has_at_least_one_failure() {
-    unimplemented!();
+    let (repo, mut cl, make) = setup("reveal.js-unnested");
+    cl.fail_on_change = true;
+
+    let ve = deduplicate_into(repo.path(), &[make.package_at("sigmund")], &mut cl).err().unwrap();
+    assert_that(&ve, of_len(1))
 }
 
 #[test]
@@ -79,7 +99,7 @@ fn it_informs_the_visitor_right_after_something_went_wrong() {
 #[test]
 fn it_rejects_duplicate_packages() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
-    
+
     let p = make.package_at("sigmund");
     let ps = [p.clone(), p];
     let ve = deduplicate_into(repo.path(), &ps, &mut cl).err().unwrap();

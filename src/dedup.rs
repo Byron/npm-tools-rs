@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::hash_set::HashSet;
 use semver::{VersionReq, Version, SemVerError, ReqParseError};
+use std::error::Error as StdError;
 
 use std;
 use std::fs;
@@ -13,6 +14,7 @@ use std::io;
 
 struct ReadPackageFile<'a>(&'a Path);
 struct DecodePackageFile<'a>(&'a Path);
+struct VisitorContext<'a>(&'a Path);
 struct PathAndVersion<'a>(&'a Path, &'a str);
 
 quick_error!{
@@ -50,6 +52,12 @@ quick_error!{
             context(p: DecodePackageFile<'a>, err: serde_json::Error) -> (p.0.to_path_buf(), err)
             cause(err)
         }
+        Visitor(p: PathBuf, err: Box<StdError>) {
+            description("The visitor produced an error when changing")
+            display("An error occurred: {}", err)
+            context(p: VisitorContext<'a>, err: Box<StdError>) -> (p.0.to_path_buf(), err)
+            // cause(err)
+        }
     }
 }
 
@@ -66,12 +74,14 @@ pub enum Instruction {
 }
 
 pub trait Visitor {
+    type Error;
+
     /// Called whenever the package identified by `package` could be processed. The exact
     /// problem is stated in `err`.
     fn error(&mut self, package: &PackageInfo, err: &Error);
     /// Called with an instruction on what to do next. Must never panic, and is expected to keep
     /// all error handling internal.
-    fn change(&mut self, action: Instruction);
+    fn change(&mut self, action: Instruction) -> Result<(), Self::Error>;
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -108,10 +118,11 @@ impl PackageInfo {
 /// Iterate `items` and read all package.json files contained therein to collect enough information
 /// to compute all changes required to sym-link or update the respective packages in `repo`.
 /// `visitor` will be called whenever something goes wrong, or whenever there is something to do.
-pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Result<(), Vec<Error>>
+pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> Result<(), Vec<Error>>
     where P: AsRef<Path>,
           I: IntoIterator<Item = &'a PackageInfo>,
-          V: Visitor
+          E: StdError + 'static,
+          V: Visitor<Error = E>
 {
     fn read_package_json(p: &PackageInfo) -> std::result::Result<Map<String, Value>, Error> {
         let pjp = p.directory.join("package.json");
@@ -138,15 +149,15 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
             })
     }
 
-    fn handle_error(p: &PackageInfo, errs: &mut Vec<Error>, err: Error, v: &mut Visitor) {
+    fn handle_error<E>(p: &PackageInfo, errs: &mut Vec<Error>, err: Error, v: &mut Visitor<Error = E>) {
         v.error(p, &err);
         errs.push(err);
     }
 
-    fn handle_package(p: &PackageInfo,
-                      errors: &mut Vec<Error>,
-                      deps: &mut HashMap<PackageKey, PackageDependencies>,
-                      visitor: &mut Visitor) {
+    fn handle_package<E>(p: &PackageInfo,
+                         errors: &mut Vec<Error>,
+                         deps: &mut HashMap<PackageKey, PackageDependencies>,
+                         visitor: &mut Visitor<Error = E>) {
         match read_package_json(p).and_then(|pj| {
             fetch_string(&pj, p, "version")
                 .and_then(|v| fetch_string(&pj, p, "name").map(|n| (v, n)))
@@ -226,10 +237,16 @@ pub fn deduplicate_into<'a, P, I, V>(repo: P, items: I, visitor: &mut V) -> Resu
         let destination = repo.as_ref().join(&pi.name).join(format!("{}", &pi.version));
         let ref p = pd.package_info;
         visitor.change(Instruction::MoveAndSymlink {
-            from_here: p.directory.clone(),
-            to_here: destination.clone(),
-            symlink_destination: destination,
-        });
+                from_here: p.directory.clone(),
+                to_here: destination.clone(),
+                symlink_destination: destination,
+            })
+            .map_err(|err| Error::Visitor(p.directory.clone(), Box::new(err)))
+            .or_else(|err| {
+                handle_error(p, &mut errors, err, visitor);
+                Ok::<(), Error>(())
+            })
+            .ok();
     }
 
     if errors.is_empty() {
