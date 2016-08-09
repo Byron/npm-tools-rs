@@ -56,6 +56,7 @@ quick_error!{
             description("The visitor produced an error when changing")
             display("An error occurred: {}", err)
             context(p: VisitorContext<'a>, err: Box<StdError>) -> (p.0.to_path_buf(), err)
+            // TODO: http://stackoverflow.com/questions/38842875/how-to-use-quick-error-with-boxed-error-types
             // cause(err)
         }
     }
