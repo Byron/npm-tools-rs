@@ -40,7 +40,7 @@ quick_error!{
         }
         JsonStructure(package_json_dir: PathBuf, expectation: String) {
             description("The data structure within package.json was unexpected")
-            display("Unexpected Json Strucut in {}/package.json: {}", package_json_dir.display(), expectation)
+            display("Unexpected JSON structure in {}/package.json: {}", package_json_dir.display(), expectation)
         }
         DuplicatePackageInformation(p: PackageInfo) {
             description("The given package information was traversed already")
