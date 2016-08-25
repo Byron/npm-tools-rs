@@ -63,14 +63,39 @@ quick_error!{
 
 /// Something to be done.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Instruction {
+pub enum Instruction<'a> {
     /// Move the directory at `from_here` to the `to_here` location, and create a symbolic link
     /// located at `from_here` which points to `to_here`, via the pre-computed `symlink_destination`
+    MoveAndSymlink {
+        from_here: &'a Path,
+        to_here: &'a Path,
+        symlink_destination: &'a Path,
+    },
+}
+
+/// An version of Instruction which can be fully owned, as all fields are the owned version of their
+/// otherwise borrowed counterparts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InstructionOwned {
     MoveAndSymlink {
         from_here: PathBuf,
         to_here: PathBuf,
         symlink_destination: PathBuf,
     },
+}
+
+impl<'a> From<Instruction<'a>> for InstructionOwned {
+    fn from(other: Instruction<'a>) -> Self {
+        match other {
+            Instruction::MoveAndSymlink { from_here, to_here, symlink_destination } => {
+                InstructionOwned::MoveAndSymlink {
+                    from_here: from_here.to_owned(),
+                    to_here: to_here.to_owned(),
+                    symlink_destination: symlink_destination.to_owned(),
+                }
+            }
+        }
+    }
 }
 
 pub trait Visitor {
@@ -81,7 +106,7 @@ pub trait Visitor {
     fn error(&mut self, package: &PackageInfo, err: &Error);
     /// Called with an instruction on what to do next. Must never panic, and is expected to keep
     /// all error handling internal.
-    fn change(&mut self, action: Instruction) -> Result<(), Self::Error>;
+    fn change<'a>(&mut self, action: Instruction<'a>) -> Result<(), Self::Error>;
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -237,9 +262,9 @@ pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> R
         let destination = repo.as_ref().join(&pi.name).join(format!("{}", &pi.version));
         let ref p = pd.package_info;
         visitor.change(Instruction::MoveAndSymlink {
-                from_here: p.directory.clone(),
-                to_here: destination.clone(),
-                symlink_destination: destination,
+                from_here: p.directory.as_ref(),
+                to_here: destination.as_ref(),
+                symlink_destination: destination.as_ref(),
             })
             .map_err(|err| Error::Visitor(p.directory.clone(), Box::new(err)))
             .or_else(|err| {
