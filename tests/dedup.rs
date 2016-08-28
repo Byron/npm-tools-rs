@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use npm_tools::{deduplicate_into, Visitor, PackageInfo, InstructionOwned, Instruction, Error};
 use hamcrest::*;
 use tempdir::TempDir;
+use std::fs::create_dir_all;
 
 #[derive(Default)]
 struct Collector {
@@ -49,7 +50,27 @@ fn setup(root: &str) -> (TempDir, Collector, utils::PackageMaker) {
 }
 
 #[test]
-fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_does_not_exist() {
+fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_does_exist_there() {
+    let (repo, mut cl, make) = setup("reveal.js-unnested");
+    let abs_destination = repo.path().join("sigmund").join("1.0.1");
+    create_dir_all(&abs_destination).unwrap();
+
+    let ps = [make.package_at("sigmund")];
+    let r = deduplicate_into(repo.path(), &ps, &mut cl);
+    assert_that(r.unwrap(), equal_to(()));
+    assert_that(&cl.instructions, of_len(1));
+
+    match cl.instructions[0] {
+        InstructionOwned::ReplaceWithSymlink { ref this_directory, ref symlink_destination } => {
+            assert_that(this_directory, equal_to(&ps[0].directory));
+            assert_that(symlink_destination, equal_to(&abs_destination));
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn it_can_tell_the_visitor_to_move_and_symlink_a_direct_dependency_to_repo_if_version_does_not_exist() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
 
     let ps = [make.package_at("sigmund")];
@@ -57,14 +78,14 @@ fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_doe
     assert_that(r.unwrap(), equal_to(()));
     assert_that(&cl.instructions, of_len(1));
 
-    let ref op = cl.instructions[0];
-    match op {
-        &InstructionOwned::MoveAndSymlink { ref from_here, ref to_here, ref symlink_destination } => {
+    match cl.instructions[0] {
+        InstructionOwned::MoveAndSymlink { ref from_here, ref to_here, ref symlink_destination } => {
             assert_that(from_here, equal_to(&ps[0].directory));
             let expected_to_here = repo.path().join("sigmund").join("1.0.1");
             assert_that(to_here, equal_to(&expected_to_here));
             assert_that(symlink_destination, equal_to(&expected_to_here));
         }
+        _ => unreachable!(),
     }
 }
 

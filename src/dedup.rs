@@ -65,10 +65,16 @@ quick_error!{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instruction<'a> {
     /// Move the directory at `from_here` to the `to_here` location, and create a symbolic link
-    /// located at `from_here` which points to `to_here`, via the pre-computed `symlink_destination`
+    /// located at `from_here` which points to `to_here` via the pre-computed `symlink_destination`
     MoveAndSymlink {
         from_here: &'a Path,
         to_here: &'a Path,
+        symlink_destination: &'a Path,
+    },
+    /// Replace `this_directory` with a symbolic link at the same path via the pre-computed
+    /// `symlink_destination`.
+    ReplaceWithSymlink {
+        this_directory: &'a Path,
         symlink_destination: &'a Path,
     },
 }
@@ -82,6 +88,10 @@ pub enum InstructionOwned {
         to_here: PathBuf,
         symlink_destination: PathBuf,
     },
+    ReplaceWithSymlink {
+        this_directory: PathBuf,
+        symlink_destination: PathBuf,
+    },
 }
 
 impl<'a> From<Instruction<'a>> for InstructionOwned {
@@ -91,6 +101,12 @@ impl<'a> From<Instruction<'a>> for InstructionOwned {
                 InstructionOwned::MoveAndSymlink {
                     from_here: from_here.to_owned(),
                     to_here: to_here.to_owned(),
+                    symlink_destination: symlink_destination.to_owned(),
+                }
+            }
+            Instruction::ReplaceWithSymlink { this_directory, symlink_destination } => {
+                InstructionOwned::ReplaceWithSymlink {
+                    this_directory: this_directory.to_owned(),
                     symlink_destination: symlink_destination.to_owned(),
                 }
             }
@@ -261,15 +277,23 @@ pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> R
     for (pi, pd) in deps.iter_mut() {
         let destination = repo.as_ref().join(&pi.name).join(format!("{}", &pi.version));
         let ref p = pd.package_info;
-        visitor.change(Instruction::MoveAndSymlink {
+        let instruction = if destination.is_dir() {
+            Instruction::ReplaceWithSymlink {
+                this_directory: p.directory.as_ref(),
+                symlink_destination: destination.as_ref(),
+            }
+        } else {
+            Instruction::MoveAndSymlink {
                 from_here: p.directory.as_ref(),
                 to_here: destination.as_ref(),
                 symlink_destination: destination.as_ref(),
-            })
+            }
+        };
+        visitor.change(instruction)
             .map_err(|err| Error::Visitor(p.directory.clone(), Box::new(err)))
             .or_else(|err| {
                 handle_error(p, &mut errors, err, visitor);
-                Ok::<(), Error>(())
+                Ok::<_, Error>(())
             })
             .ok();
     }
