@@ -289,13 +289,15 @@ pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> R
                 symlink_destination: destination.as_ref(),
             }
         };
-        visitor.change(instruction)
-            .map_err(|err| Error::Visitor(p.directory.clone(), Box::new(err)))
-            .or_else(|err| {
-                handle_error(p, &mut errors, err, visitor);
-                Ok::<_, Error>(())
-            })
-            .ok();
+        if !p.directory.symlink_metadata().unwrap().file_type().is_symlink() {
+            visitor.change(instruction)
+                .map_err(|err| Error::Visitor(p.directory.clone(), Box::new(err)))
+                .or_else(|err| {
+                    handle_error(p, &mut errors, err, visitor);
+                    Ok::<_, Error>(())
+                })
+                .ok();
+        }
     }
 
     if errors.is_empty() {

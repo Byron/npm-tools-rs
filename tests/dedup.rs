@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use npm_tools::{deduplicate_into, Visitor, PackageInfo, InstructionOwned, Instruction, Error};
 use hamcrest::*;
 use tempdir::TempDir;
-use std::fs::create_dir_all;
+use std::fs::{File, create_dir_all};
+use std::io::Write;
+use std::os::unix::fs::symlink;
 
 #[derive(Default)]
 struct Collector {
@@ -26,7 +28,6 @@ quick_error!{
         Action(action: InstructionOwned) { }
     }
 }
-
 
 impl Visitor for Collector {
     type Error = FakeError;
@@ -50,7 +51,36 @@ fn setup(root: &str) -> (TempDir, Collector, utils::PackageMaker) {
 }
 
 #[test]
-fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_does_exist_there() {
+fn it_does_not_tell_visitor_to_symlink_a_direct_dependency_to_repo_if_it_is_a_symlink_to_correct_destination_already
+    () {
+    let repo = utils::transient_repo_path();
+    let repo_sigmund_destination = repo.path().join("sigmund").join("1.0.1");
+    create_dir_all(&repo_sigmund_destination).unwrap();
+    File::create(repo_sigmund_destination.join("package.json"))
+        .unwrap()
+        .write_all(r#"{"version":"1.0.1", "name":"sigmund"}"#.as_ref())
+        .unwrap();
+
+    let package_source = TempDir::new("package").unwrap();
+    let package_sigmund_dir = package_source.path().join("node_modules");
+
+    create_dir_all(&package_sigmund_dir).unwrap();
+    symlink(&repo_sigmund_destination,
+            &package_sigmund_dir.join("sigmund"))
+        .unwrap();
+
+    let make = utils::PackageMaker::new(package_source.path().to_str().unwrap());
+
+    let ps = [make.package_at("sigmund")];
+    let mut cl = Collector::default();
+    let r = deduplicate_into(repo.path(), &ps, &mut cl);
+
+    assert_that(r.unwrap(), equal_to(()));
+    assert_that(&cl.instructions, of_len(0));
+}
+
+#[test]
+fn it_tells_visitor_to_symlink_a_direct_dependency_to_repo_if_version_does_exist_there() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
     let abs_destination = repo.path().join("sigmund").join("1.0.1");
     create_dir_all(&abs_destination).unwrap();
@@ -70,7 +100,7 @@ fn it_can_tell_the_visitor_to_symlink_a_direct_dependency_to_repo_if_version_doe
 }
 
 #[test]
-fn it_can_tell_the_visitor_to_move_and_symlink_a_direct_dependency_to_repo_if_version_does_not_exist() {
+fn it_tells_visitor_to_move_and_symlink_a_direct_dependency_to_repo_if_version_does_not_exist() {
     let (repo, mut cl, make) = setup("reveal.js-unnested");
 
     let ps = [make.package_at("sigmund")];
