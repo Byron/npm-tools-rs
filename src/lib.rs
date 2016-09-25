@@ -14,11 +14,11 @@
 //!   suitable version.
 //!   As new packages and/or versions are added, this might change. Can be
 //!   based on packages within
-//!   a project's node_modules dir, or on all the ones in the npm-repo.
+//!   a project's `node_modules` dir, or on all the ones in the npm-repo.
 //! * collect and remove packages in the npm-repo which are not used anymore.
 //!   - This should be based on a list of repos which use it ... this can at
 //!   least help to efficiently optimize the repo.
-//! * Revert all changes to the node_modules directory to allow npm to operate
+//! * Revert all changes to the `node_modules` directory to allow npm to operate
 //!   naturally on it.
 //! - **IMPORTANT**: figure out whether it will mess with an existing setup -
 //! it could

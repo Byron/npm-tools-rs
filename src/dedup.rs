@@ -122,7 +122,7 @@ pub trait Visitor {
     fn error(&mut self, package: &PackageInfo, err: &Error);
     /// Called with an instruction on what to do next. Must never panic, and is expected to keep
     /// all error handling internal.
-    fn change<'a>(&mut self, action: Instruction<'a>) -> Result<(), Self::Error>;
+    fn change(&mut self, action: Instruction) -> Result<(), Self::Error>;
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -146,7 +146,7 @@ struct PackageDependencies {
 pub struct PackageInfo {
     /// the directory containing the package.json
     pub directory: PathBuf,
-    /// the root directory at which all other node_modules are found
+    /// the root directory at which all other `node_modules` are found
     pub root_directory: PathBuf,
 }
 
@@ -179,8 +179,8 @@ pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> R
 
     fn fetch_string(m: &Map<String, Value>, p: &PackageInfo, field_name: &str) -> Result<String, Error> {
         m.get(field_name)
-            .and_then(|v| match v {
-                &Value::String(ref v) => Some(v.to_owned()),
+            .and_then(|v| match *v {
+                Value::String(ref v) => Some(v.to_owned()),
                 _ => None,
             })
             .ok_or_else(|| {
@@ -274,9 +274,9 @@ pub fn deduplicate_into<'a, P, I, V, E>(repo: P, items: I, visitor: &mut V) -> R
         handle_package(p, &mut errors, &mut deps, visitor);
     }
 
-    for (pi, pd) in deps.iter_mut() {
+    for (pi, pd) in deps {
         let destination = repo.as_ref().join(&pi.name).join(format!("{}", &pi.version));
-        let ref p = pd.package_info;
+        let p = &pd.package_info;
         let instruction = if destination.is_dir() {
             Instruction::ReplaceWithSymlink {
                 this_directory: p.directory.as_ref(),
